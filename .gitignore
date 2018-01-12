@@ -63,4 +63,5 @@ typings/
 # webstorm temp file
 .idea
 
+gulpfile.js
 
