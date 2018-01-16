@@ -83,7 +83,7 @@ const render = {
               if (err) {
                 console.log(err);
               } else {
-                $(task).replaceWith(rendered);
+                $(task).replaceWith(entities.decodeHTML(xhtml(rendered)));
                 next();
               }
             }
@@ -94,7 +94,7 @@ const render = {
             console.log(err);
             callback(err);
           } else {
-            let rendered = entities.decodeHTML($.html());
+            let rendered = $.html();
             callback(rendered);
           }
         }
