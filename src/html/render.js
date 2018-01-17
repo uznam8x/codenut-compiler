@@ -104,10 +104,14 @@ const render = {
     }
   },
   clean: (el) => {
-    return el.replace(/\sdata-server-rendered=['"]\w*['"]/g, '')
-      .replace(/[a-z]+="\s*"/g, '')
-      .replace(/<!---->/g, '')
-      .replace(/>\s</g, '><');
+    if( typeof el === 'string' ){
+      return el.replace(/\sdata-server-rendered=['"]\w*['"]/g, '')
+        .replace(/[a-z]+="\s*"/g, '')
+        .replace(/<!---->/g, '')
+        .replace(/>\s</g, '><');
+    } else {
+      return el.toString();
+    }
   }
 };
 
@@ -143,7 +147,7 @@ const html = (option) => {
           console.error(err);
           content = err.toString();
         } else {
-          content = prettify(content);
+          content = prettify(entities.decodeHTML(content));
         }
 
         file.contents = new Buffer(content);
