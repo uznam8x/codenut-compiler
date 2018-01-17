@@ -5,6 +5,4 @@ const html = require(__dirname + '/src/html/render');
 module.exports = {
   config: config,
   html: html,
-  sass: {},
-  webpack: {},
 };

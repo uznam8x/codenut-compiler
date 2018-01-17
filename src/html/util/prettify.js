@@ -4,7 +4,7 @@ const defaults = {
   indent_handlebars: true,
   indent_inner_html: true,
   extra_liners: [],
-  unformatted: ['pre','code','xmp'],
+  unformatted: ['pre', 'code', 'xmp'],
   indent_size: 2,
   indent_char: ' ',
   indent_with_tabs: false,
@@ -27,8 +27,10 @@ const defaults = {
   comma_first: false,
   operator_position: 'before-newline'
 };
+
 const prettify = (html, option) => {
   const opts = _.defaultsDeep(option || {}, defaults);
   return beautify.html(html, opts);
-}
+};
+
 module.exports = prettify;
