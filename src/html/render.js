@@ -6,11 +6,10 @@ const xhtml = require(path.resolve(__dirname, 'util/xhtml'));
 const prettify = require(path.resolve(__dirname, 'util/prettify'));
 const _ = require('lodash');
 const nunjucks = require('nunjucks');
-const Vue = require('vue');
-const renderer = require('vue-server-renderer').createRenderer();
 const cheerio = require('cheerio');
 const entities = require('entities');
 const async = require('async');
+const nut = require(path.resolve(__dirname, 'util/nut'));
 
 const render = {
   nunjucks: (file, content, option, callback) => {
@@ -60,34 +59,57 @@ const render = {
       }
     });
   },
-  vue: (content, option, callback) => {
+  nut: (file, content, option, callback) => {
+
     let $ = cheerio.load(content, {
       ignoreWhitespace: true,
       xmlMode: true,
       lowerCaseTags: true
     });
-
     let component = [];
-    for (let key in Vue.options.components) {
+
+    for (let key in nut.get()) {
       let comp = $(key);
 
       if (comp.length) {
         component.push.apply(component, comp);
       }
     }
+
+    let data = {};
+    if (file.data) {
+      data = file.data;
+    }
+
+    const compile = new nunjucks.Environment();
+    compile.addGlobal('arrtibs', function (arrtibs) {
+      let str = '';
+      for (let key in arrtibs) {
+        str += `${key}="${arrtibs[key]}" `;
+      }
+      return str;
+    });
+
     if (component.length) {
       async.each(component, (task, next) => {
-          renderer.renderToString(new Vue({
-              template: $.html(task),
-            }), function (err, rendered) {
-              if (err) {
-                console.log(err);
-              } else {
-                $(task).replaceWith(entities.decodeHTML(xhtml(rendered)));
-                next();
-              }
+          let item = nut.get(task.name);
+          let props = item.props;
+
+          for (let key in props) {
+            if (task.attribs[key]) {
+              props[key] = task.attribs[key];
+              delete task.attribs[key];
             }
-          );
+          }
+
+          compile.renderString(item.template, { el: task, props: props, data: data }, (err, rendered) => {
+            if (err) {
+              console.log(err);
+            } else {
+              $(task).replaceWith(entities.decodeHTML(xhtml(rendered)));
+              next();
+            }
+          });
 
         }, (err) => {
           if (err) {
@@ -104,7 +126,7 @@ const render = {
     }
   },
   clean: (el) => {
-    if( typeof el === 'string' ){
+    if (typeof el === 'string') {
       return el.replace(/\sdata-server-rendered=['"]\w*['"]/g, '')
         .replace(/[a-z]+="\s*"/g, '')
         .replace(/<!---->/g, '')
@@ -133,7 +155,7 @@ const html = (option) => {
           })
         },
         (callback) => {
-          render.vue(content, option, (result) => {
+          render.nut(file, content, option, (result) => {
             content = result;
             callback();
           });
@@ -147,7 +169,7 @@ const html = (option) => {
           console.error(err);
           content = err.toString();
         } else {
-          content = prettify(entities.decodeHTML(content));
+          content = prettify(entities.decodeHTML(xhtml(content)));
         }
 
         file.contents = new Buffer(content);
