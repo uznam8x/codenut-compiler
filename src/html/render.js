@@ -143,7 +143,10 @@ const html = (option) => {
   return through.obj(function (file, enc, next) {
     'use strict';
     const self = this;
-    let content = file.contents.toString();
+    let content = '';
+    if(file.contents.length){
+      content = file.contents.toString();
+    }
 
     try {
       content = xhtml(content);
@@ -169,7 +172,7 @@ const html = (option) => {
           console.error(err);
           content = err.toString();
         } else {
-          content = prettify(entities.decodeHTML(xhtml(content)));
+          content = prettify(xhtml(content));
         }
 
         file.contents = new Buffer(content);

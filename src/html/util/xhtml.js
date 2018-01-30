@@ -1,7 +1,7 @@
 const xhtml = (el) => {
   'use strict';
   const trim = (str) => {
-    return str.replace(/\n|\t/g, '').replace(/\s+/g, ' ').toLowerCase()
+    return str.replace(/\n|\t/g, '').replace(/\s+/g, ' ');
   };
   const single = [
     'br', 'hr', 'img', 'input', 'meta', 'link',
