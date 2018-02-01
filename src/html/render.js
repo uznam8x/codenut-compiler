@@ -101,12 +101,17 @@ const render = {
               delete task.attribs[key];
             }
           }
-
-          compile.renderString(item.template, { el: task, props: props, data: data }, (err, rendered) => {
+          if( item.beforeCreate ){
+            data = item.beforeCreate(data, props, file);
+          }
+          compile.renderString(item.template, {el: task, props: props, data: data}, (err, rendered) => {
             if (err) {
               console.log(err);
             } else {
-              $(task).replaceWith(entities.decodeHTML(xhtml(rendered)));
+              rendered = entities.decodeHTML(xhtml(rendered));
+              if (item.created) rendered = item.created(rendered, file);
+              $(task).replaceWith(rendered);
+
               next();
             }
           });
@@ -144,7 +149,7 @@ const html = (option) => {
     'use strict';
     const self = this;
     let content = '';
-    if(file.contents.length){
+    if (file.contents.length) {
       content = file.contents.toString();
     }
 
@@ -172,7 +177,7 @@ const html = (option) => {
           console.error(err);
           content = err.toString();
         } else {
-          content = prettify(xhtml(content));
+          content = prettify(entities.decodeHTML(xhtml(content)));
         }
 
         file.contents = new Buffer(content);

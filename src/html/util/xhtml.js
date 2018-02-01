@@ -11,7 +11,15 @@ const xhtml = (el) => {
   for (let item of single) {
     let regex = new RegExp('<' + item + '((.|\n)*?)>', 'g');
     el = el.replace(regex, (match, capture) => {
-      return trim('<' + item + ' ' + capture + '/>').replace(/\/[\s+]?\//g, '/');
+      let bool = match.replace(/<(\w+)((.|\n)*?)>/g, (node, tag, attr)=>{
+        return single.indexOf(tag);
+      });
+
+      if( parseInt(bool) === -1 ){
+        return match;
+      } else {
+        return trim('<' + item + ' ' + capture + '/>').replace(/\/[\s+]?\//g, '/');
+      }
     })
   }
   el = el.replace(/<(\w+)[^>]*\/>/g, (match, capture) => {
