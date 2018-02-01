@@ -18,7 +18,7 @@ const xhtml = (el) => {
       if( parseInt(bool) === -1 ){
         return match;
       } else {
-        return trim('<' + item + ' ' + capture + '/>').replace(/\/[\s+]?\//g, '/');
+        return trim('<' + item + ' ' + capture + '/>').replace(/\/[\s+]?\/>/g, '/>');
       }
     })
   }
