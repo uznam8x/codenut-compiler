@@ -101,16 +101,22 @@ const render = {
               delete task.attribs[key];
             }
           }
+
+          let config = {data:data, props:props, file:file, task:task}
+
           if( item.beforeCreate ){
-            data = item.beforeCreate(data, props, file);
+            config = item.beforeCreate(config);
           }
-          compile.renderString(item.template, {el: task, props: props, data: data}, (err, rendered) => {
+          compile.renderString(item.template, {el: config.task, props: config.props, data: config.data}, (err, rendered) => {
             if (err) {
               console.log(err);
             } else {
               rendered = entities.decodeHTML(xhtml(rendered));
-              if (item.created) rendered = item.created(rendered, file);
-              $(task).replaceWith(rendered);
+
+              let result = {rendered:rendered, file:file, task:task};
+
+              if (item.created) result = item.created(result);
+              $(task).replaceWith(result.rendered);
 
               next();
             }
