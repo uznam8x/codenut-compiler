@@ -62,7 +62,7 @@ const render = {
   nut: (file, content, option, callback) => {
 
     let $ = cheerio.load(content, {
-      ignoreWhitespace: true,
+      ignoreWhitespace: false,
       xmlMode: true,
       lowerCaseTags: true
     });
@@ -93,7 +93,7 @@ const render = {
     if (component.length) {
       async.each(component, (task, next) => {
           let item = nut.get(task.name);
-          let props = item.props;
+          let props = JSON.parse( JSON.stringify( item.props ) );
 
           for (let key in props) {
             if (task.attribs[key]) {
@@ -102,7 +102,7 @@ const render = {
             }
           }
 
-          let config = {data:data, props:props, file:file, task:task}
+          let config = {data:JSON.parse( JSON.stringify( data ) ), props:props, file:file, task:task}
 
           if( item.beforeCreate ){
             config = item.beforeCreate(config);
@@ -111,12 +111,11 @@ const render = {
             if (err) {
               console.log(err);
             } else {
-              rendered = entities.decodeHTML(xhtml(rendered));
-
               let result = {rendered:rendered, file:file, task:task};
-
               if (item.created) result = item.created(result);
-              $(task).replaceWith(result.rendered);
+
+              rendered = (xhtml(result.rendered));
+              $(task).replaceWith(rendered);
 
               next();
             }
@@ -183,7 +182,9 @@ const html = (option) => {
           console.error(err);
           content = err.toString();
         } else {
-          content = prettify(entities.decodeHTML(xhtml(content)));
+          content = prettify((xhtml(content))).replace(/(&#x[a-dA-D]?[^;]*;)/g, (match,capture)=>{
+            return entities.decodeHTML(capture);
+          });
         }
 
         file.contents = new Buffer(content);
