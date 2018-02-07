@@ -75,8 +75,8 @@ const component = ($, data, option, next) => {
       let config = {
         data: JSON.parse(JSON.stringify(data)),
         props: props,
-        task: task
-      }
+        el: task
+      };
 
       if (item.beforeCreate) {
         config = item.beforeCreate(config);
@@ -84,7 +84,7 @@ const component = ($, data, option, next) => {
 
       let before = $.html(task);
       compile(item.template, config, option, function (rendered) {
-        let result = { rendered: rendered, data: data, task: task };
+        let result = { rendered: rendered, data: data, el: task };
         if (item.created) result = item.created(result);
 
         rendered = (xhtml(result.rendered));
