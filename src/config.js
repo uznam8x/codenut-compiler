@@ -2,23 +2,16 @@
 let instance = null;
 const path = require('path');
 const _ = require('lodash');
-const config = (option) => {
+const glob = require('glob');
+const load = (file) => {
   'use strict';
-  if (!instance) {
-    let options = {
-      path: {
-        root: path.resolve('./'),
-      }
-    };
-    options.path = _.defaultsDeep(options.path, {
-      app: options.path.root + '/app',
-      develop: options.path.root + '/app/dev',
-      product: options.path.root + '/app/prod',
-    });
-
-    instance = _.defaultsDeep(option || {}, options);
+  for (let i = 0, len = file.length; i < len; i++) {
+    require(path.resolve(__dirname, file[i]));
   }
-  return instance;
 };
 
-module.exports = config;
+glob(path.resolve('./') + '/app/dev/nut/**/*.nut', (err, files) => {
+    if (err) throw err;
+    load(files);
+  }
+);
