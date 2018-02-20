@@ -9,6 +9,7 @@ const cheerio = require('cheerio');
 const entities = require('entities');
 const async = require('async');
 const nut = require(path.resolve(__dirname, 'nut'));
+require(__dirname + '/config.js');
 const defaults = {
   path: '.',
   ext: '.html',
@@ -38,13 +39,34 @@ const compile = (content, data, option, callback) => {
     for (let key in arrtibs) {
       str += `${key}="${arrtibs[key]}" `;
     }
-    return str;
+    return new nunjucks.runtime.SafeString( str );
   });
 
   environment.addGlobal('json', function (data) {
     return JSON.parse(data);
   });
 
+  const SafeExtension = function(){
+    this.tags = ['safe'];
+    this.parse = function(parser, node, lexer){
+      const tok = parser.nextToken()
+      const args = parser.parseSignature(null, true)
+      parser.advanceAfterBlockEnd(tok.value)
+      const body = parser.parseUntilBlocks("endsafe")
+      parser.advanceAfterBlockEnd()
+      let errorBody = null;
+      if(parser.skipSymbol('error')) {
+        parser.skip(lexer.TOKEN_BLOCK_END);
+        errorBody = parser.parseUntilBlocks('endsafe');
+      }
+      return new node.CallExtension(this, 'run', args, [body]);
+    }
+    this.run = (context, body) => {
+      return new nunjucks.runtime.SafeString( body() );
+    }
+  }
+
+  environment.addExtension('SafeExtension', new SafeExtension());
   environment.renderString(content, data, function (err, result) {
     callback(err ? err.toString() : result);
   });
@@ -107,9 +129,9 @@ const component = ($, data, option, next) => {
     $ = null;
   }
 
-};
+}
 
-require(__dirname + '/config.js');
+
 const build = (option) => {
   'use strict';
 
