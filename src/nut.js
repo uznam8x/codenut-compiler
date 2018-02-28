@@ -11,11 +11,13 @@ Nut.register = function(obj){
   for(var key in obj){
     Nut.item[key] = obj[key];
   }
-}
+};
+
 Nut.get = (name)=>{
   if (name) return Nut.item[name];
   return Nut.item;
-}
+};
+
 const load = (file) => {
   'use strict';
   for (let i = 0, len = file.length; i < len; i++) {

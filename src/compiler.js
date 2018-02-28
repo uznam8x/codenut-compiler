@@ -7,6 +7,7 @@ const _ = require('lodash');
 const nunjucks = require('nunjucks');
 const cheerio = require('cheerio');
 const entities = require('entities');
+const async = require('async');
 const guid = require('guid');
 const nut = require(__dirname + '/nut.js');
 const defaults = {
