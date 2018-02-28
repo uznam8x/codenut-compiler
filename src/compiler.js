@@ -7,9 +7,8 @@ const _ = require('lodash');
 const nunjucks = require('nunjucks');
 const cheerio = require('cheerio');
 const entities = require('entities');
-const async = require('async');
-const nut = require(path.resolve(__dirname, 'nut'));
-require(__dirname + '/config.js');
+const guid = require('guid');
+const nut = require(__dirname + '/nut.js');
 const defaults = {
   path: '.',
   ext: '.html',
@@ -39,105 +38,120 @@ const compile = (content, data, option, callback) => {
     for (let key in arrtibs) {
       str += `${key}="${arrtibs[key]}" `;
     }
-    return new nunjucks.runtime.SafeString( str );
+    return new nunjucks.runtime.SafeString(str);
   });
 
   environment.addGlobal('json', function (data) {
+    data = data
+      .replace(/=(["\'])([^>]*?)(["\'])/g, '=\\$1$2\\$3')
+      .replace(/\\\\/g, '\\');
+
     return JSON.parse(data);
   });
-
-  const SafeExtension = function(){
-    this.tags = ['safe'];
-    this.parse = function(parser, node, lexer){
-      const tok = parser.nextToken()
-      const args = parser.parseSignature(null, true)
-      parser.advanceAfterBlockEnd(tok.value)
-      const body = parser.parseUntilBlocks("endsafe")
-      parser.advanceAfterBlockEnd()
-      let errorBody = null;
-      if(parser.skipSymbol('error')) {
-        parser.skip(lexer.TOKEN_BLOCK_END);
-        errorBody = parser.parseUntilBlocks('endsafe');
-      }
-      return new node.CallExtension(this, 'run', args, [body]);
-    }
-    this.run = (context, body) => {
-      return new nunjucks.runtime.SafeString( body() );
-    }
-  }
-
-  environment.addExtension('SafeExtension', new SafeExtension());
-  environment.renderString(content, data, function (err, result) {
-    callback(err ? err.toString() : result);
+  environment.addGlobal('stringify', function (data) {
+    return new nunjucks.runtime.SafeString(JSON.stringify(data, null, 2));
   });
-}
 
-const component = ($, data, option, next) => {
-  let queue = [];
-  for (let key in nut.get()) {
+  const NutExtension = function () {
+    this.tags = ['nut'];
 
-    let comp = $(key);
+    this.parse = function (parser, nodes, lexer) {
+      let tok = parser.nextToken();
+      let args = parser.parseSignature(null, true);
+      parser.advanceAfterBlockEnd(tok.value);
 
-    if (comp.length) {
-      queue.push.apply(queue, comp);
-    }
-  }
+      let body = parser.parseUntilBlocks('endnut');
+      parser.advanceAfterBlockEnd();
+      return new nodes.CallExtension(this, 'run', args, [body]);
+    };
 
-  if (queue.length) {
-    async.each(queue, (task, callback) => {
-      let item = nut.get(task.name);
-      let props = JSON.parse(JSON.stringify(item.props));
-
-      for (let key in props) {
-        if (task.attribs[key]) {
-          props[key] = task.attribs[key];
-          delete task.attribs[key];
+    this.run = function (context, args, body) {
+      let id = guid.create().value.replace(/\-/g, '');
+      let content = body();
+      args.props = args.props || {};
+      args.props.slot = {
+        default: {
+          value: body().replace(/\t|\n/g, '')
+            .replace(/>\s+</g, '><')
+            .replace(/\s+</g, '<')
+            .replace(/<slot[^>]*>(.|\n)*?<\/slot>/g, '')
         }
-      }
-      let config = {
-        data: JSON.parse(JSON.stringify(data)),
-        props: props,
-        el: task
       };
 
+      let slots = content.match(/<slot[^>]*>(.|\n)*?<\/slot>/g);
+      if (slots) {
+        _.each(slots, (node) => {
+          let el = node.match(/<slot[^>]*>/g)[0];
+
+          let reg = /(\S+)=[\'"]?((?:(?!\/>|>|"|\'|\s).)+)/g;
+          let attribs = {};
+          let attr;
+
+          while ((attr = reg.exec(el)) !== null) {
+            attribs[attr[1]] = attr[2];
+          }
+          let name = attribs['name'];
+
+          args.props.slot[name] = {
+            attribs: attribs,
+            value: node.replace(/<slot[^>]*>|<\/slot>/g, '')
+          }
+        })
+      }
+
+      let item = nut.get(args.nut);
+
       if (item.beforeCreate) {
-        config = item.beforeCreate(config);
+        args = item.beforeCreate(args);
       }
+      let output = new nunjucks.runtime.SafeString(environment.renderString(
+        `{% import '${args.template}' as ${id} %}
+                 {{ ${id}.create(json('${JSON.stringify(args.props, null)}'), json('${JSON.stringify(args.attribs, null)}')) }}
+            `));
 
-      let before = $.html(task);
-      compile(item.template, config, option, function (rendered) {
-        let result = { rendered: rendered, data: data, el: task };
-        if (item.created) result = item.created(result);
-
-        rendered = (xhtml(result.rendered));
-        $(task).replaceWith(rendered);
-
-        callback(null);
-      });
-
-    }, (err) => {
-      if (err) {
-        console.log(err);
-        next(err.toString());
-      } else {
-        next($.html());
-        $ = null;
+      if (item.created) {
+        output.val = item.created(output.val);
       }
-    });
-  } else {
-    next($.html());
-    $ = null;
+      return output;
+    };
   }
+  environment.addExtension('NutExtension', new NutExtension());
 
-}
+  const SlotExtension = function () {
+    this.tags = ['slot'];
 
+    this.parse = function (parser, nodes, lexer) {
+
+      let tok = parser.nextToken();
+      let args = parser.parseSignature(null, true);
+      parser.advanceAfterBlockEnd(tok.value);
+      let body = parser.parseUntilBlocks('endslot');
+      parser.advanceAfterBlockEnd();
+      return new nodes.CallExtension(this, 'run', args, [body]);
+    };
+
+    this.run = function (context, args, body) {
+
+      return new nunjucks.runtime.SafeString(args && args.value ? args.value : body());
+    };
+  };
+
+  environment.addExtension('SlotExtension', new SlotExtension());
+
+  environment.renderString(content, data, function (err, result) {
+    if (err) {
+      console.error(err);
+    }
+    callback(err ? err.toString() : result);
+  });
+};
 
 const build = (option) => {
   'use strict';
 
   return through.obj(function (file, enc, next) {
     'use strict';
-    console.info('Compile : '+file.path.replace(path.resolve('./'), ''));
+    console.info('Compile : ' + file.path.replace(path.resolve('./'), ''));
 
     const self = this;
     let content = '';
@@ -160,6 +174,7 @@ const build = (option) => {
       console.error('Streaming not supported');
       return next();
     }
+
     try {
       async.series([
         (callback) => {
@@ -169,16 +184,43 @@ const build = (option) => {
           });
         },
         (callback) => {
-          component(
-            cheerio.load(content, {
-              ignoreWhitespace: false,
-              xmlMode: true,
-              lowerCaseTags: true
-            }), data, option, (rendered) => {
-              content = rendered;
-              callback();
-            }
-          );
+          content = xhtml(content);
+          for (let key in nut.get()) {
+            content = content.replace(new RegExp(`<${key}[^>]*>`, 'g'), (match, capture) => {
+              let item = nut.get(key);
+              let props = JSON.parse(JSON.stringify(item.props));
+
+              let reg = /(\S+)=[\'"]?((?:(?!\/>|>|"|\').)+)/g;
+              let attribs = {};
+              let attr;
+              while ((attr = reg.exec(match)) !== null) {
+                attribs[attr[1]] = attr[2];
+              }
+              for (let prop in props) {
+                if (attribs[prop]) {
+                  props[prop] = attribs[prop];
+                  delete attribs[prop];
+                }
+              }
+
+              let config = {
+                file: { path: file.path.replace(path.resolve('./'), '') },
+                props: props,
+                attribs: attribs,
+              };
+
+              config.nut = key;
+              config.template = item.template;
+              let block = `{% nut ${JSON.stringify(config)} %}`;
+              return block;
+            });
+
+            content = content.replace(new RegExp(`<[\/]?${key}[^>]*>`, 'g'), '{% endnut %}');
+          }
+          compile(content, data, option, function (rendered) {
+            content = rendered;
+            callback(null);
+          });
         },
       ], (err, result) => {
         if (err) {

@@ -1,6 +1,6 @@
 {
   "name": "codenut-compiler",
-  "version": "1.0.13",
+  "version": "2.0.0",
   "description": "Codenut-compiler is nunjucks and vue-ssr html compiler",
   "main": "index.js",
   "scripts": {
@@ -22,6 +22,7 @@
     "cheerio": "^1.0.0-rc.2",
     "child_process": "^1.0.2",
     "entities": "^1.1.1",
+    "guid": "0.0.12",
     "gulp": "^3.9.1",
     "js-beautify": "^1.7.5",
     "lodash": "^4.17.4",
