@@ -92,6 +92,7 @@ const compile = (content, data, option, callback) => {
             attribs[attr[1]] = attr[2];
           }
           let name = attribs['name'];
+          delete attribs['name'];
 
           args.props.slot[name] = {
             attribs: attribs,
