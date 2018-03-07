@@ -1,7 +1,7 @@
 'use strict';
 const path = require('path');
 const through = require('through2');
-const xhtml = require(path.resolve(__dirname, 'util/xhtml'));
+const fomatter = require(path.resolve(__dirname, 'util/formatter'));
 const prettify = require(path.resolve(__dirname, 'util/prettify'));
 const _ = require('lodash');
 const nunjucks = require('nunjucks');
@@ -160,7 +160,7 @@ const build = (option) => {
     if (file.contents.length) {
       content = file.contents.toString();
     }
-    content = xhtml(content);
+    content = fomatter.xhtml(content);
     let data = _.cloneDeep(option.data) || {};
 
     if (file.isNull()) {
@@ -186,7 +186,7 @@ const build = (option) => {
           });
         },
         (callback) => {
-          content = xhtml(content);
+          content = fomatter.xhtml(content);
           for (let key in nut.get()) {
             content = content.replace(new RegExp(`<${key}[^>]*>`, 'g'), (match, capture) => {
               let item = nut.get(key);
@@ -229,9 +229,18 @@ const build = (option) => {
           console.error(err);
           content = err.toString();
         }
-        content = prettify(xhtml(content)).replace(/(&#x[^\s|\n|\t]*;)/g, (match, capture) => {
+
+        content = fomatter.xhtml(content);
+        content = prettify(content).replace(/(&#x[^\s|\n|\t]*;)/g, (match, capture) => {
           return entities.decodeHTML(capture);
         });
+        content = fomatter.singleTag(content);
+        content = content.replace(/<textarea[^>]*>((.|\n)*?)<\/textarea>/g, (match, capture) => {
+          return match.replace(capture, (match) => {
+            return match.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\//g, '&#47;');
+          });
+        });
+
         file.contents = new Buffer(content);
         self.push(file);
         next();
