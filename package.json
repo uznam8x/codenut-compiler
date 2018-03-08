@@ -1,6 +1,6 @@
 {
   "name": "codenut-compiler",
-  "version": "2.0.2",
+  "version": "2.0.5",
   "description": "Codenut-compiler is nunjucks and vue-ssr html compiler",
   "main": "index.js",
   "scripts": {

@@ -1,7 +1,7 @@
 'use strict';
 const path = require('path');
 const through = require('through2');
-const fomatter = require(path.resolve(__dirname, 'util/formatter'));
+const formatter = require(path.resolve(__dirname, 'util/formatter'));
 const prettify = require(path.resolve(__dirname, 'util/prettify'));
 const _ = require('lodash');
 const nunjucks = require('nunjucks');
@@ -116,7 +116,7 @@ const compile = (content, data, option, callback) => {
       }
       return output;
     };
-  }
+  };
   environment.addExtension('NutExtension', new NutExtension());
 
   const SlotExtension = function () {
@@ -160,7 +160,7 @@ const build = (option) => {
     if (file.contents.length) {
       content = file.contents.toString();
     }
-    content = fomatter.xhtml(content);
+    //content = formatter.singleTag( formatter.xhtml(content) );
     let data = _.cloneDeep(option.data) || {};
 
     if (file.isNull()) {
@@ -186,7 +186,7 @@ const build = (option) => {
           });
         },
         (callback) => {
-          content = fomatter.xhtml(content);
+          content = formatter.xhtml(content);
           for (let key in nut.get()) {
             content = content.replace(new RegExp(`<${key}[^>]*>`, 'g'), (match, capture) => {
               let item = nut.get(key);
@@ -230,11 +230,15 @@ const build = (option) => {
           content = err.toString();
         }
 
-        content = fomatter.xhtml(content);
+        content = formatter.xhtml(content);
         content = prettify(content).replace(/(&#x[^\s|\n|\t]*;)/g, (match, capture) => {
           return entities.decodeHTML(capture);
         });
-        content = fomatter.singleTag(content);
+        content = formatter.singleTag(content);
+
+        content = content.replace(/>\s[\w]|[\w]\s</g, (match)=>{
+          return match.replace(/\s/g, '');
+        });
         content = content.replace(/<textarea[^>]*>((.|\n)*?)<\/textarea>/g, (match, capture) => {
           return match.replace(capture, (match) => {
             return match.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\//g, '&#47;');
