@@ -1,8 +1,6 @@
 'use strict';
 const path = require('path');
 const through = require('through2');
-const formatter = require(path.resolve(__dirname, 'util/formatter'));
-const prettify = require(path.resolve(__dirname, 'util/prettify'));
 const _ = require('lodash');
 const nunjucks = require('nunjucks');
 const cheerio = require('cheerio');
@@ -10,6 +8,7 @@ const entities = require('entities');
 const async = require('async');
 const guid = require('guid');
 const nut = require(__dirname + '/nut.js');
+const formatter = require('html-formatter');
 const defaults = {
   path: '.',
   ext: '.html',
@@ -52,6 +51,21 @@ const compile = (content, data, option, callback) => {
   environment.addGlobal('stringify', function (data) {
     return new nunjucks.runtime.SafeString(JSON.stringify(data, null, 2));
   });
+  environment.addGlobal('boolean', function (data) {
+    return (data || "false") === "true";
+  });
+  environment.addFilter('entity', function(val){
+    return new nunjucks.runtime.SafeString(val
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\//g, '&#47;')
+      .replace(/"/g, '&#34;')
+      .replace(/'/g, '&#39;')
+      .replace(/\n/g, '&#13;')
+      .replace(/\s/g, '&nbsp;'));
+  });
+
+
 
   const NutExtension = function () {
     this.tags = ['nut'];
@@ -160,6 +174,7 @@ const build = (option) => {
     if (file.contents.length) {
       content = file.contents.toString();
     }
+
     //content = formatter.singleTag( formatter.xhtml(content) );
     let data = _.cloneDeep(option.data) || {};
 
@@ -182,11 +197,12 @@ const build = (option) => {
         (callback) => {
           compile(content, data, option, function (rendered) {
             content = rendered;
+
             callback(null);
           });
         },
         (callback) => {
-          content = formatter.xhtml(content);
+          content = formatter.closing(content);
           for (let key in nut.get()) {
             content = content.replace(new RegExp(`<${key}[^>]*>`, 'g'), (match, capture) => {
               let item = nut.get(key);
@@ -206,7 +222,7 @@ const build = (option) => {
               }
 
               let config = {
-                file: { path: file.path.replace(path.resolve('./'), '') },
+                file: {path: file.path.replace(path.resolve('./'), '')},
                 props: props,
                 attribs: attribs,
               };
@@ -230,21 +246,7 @@ const build = (option) => {
           content = err.toString();
         }
 
-        content = formatter.xhtml(content);
-        content = prettify(content).replace(/(&#x[^\s|\n|\t]*;)/g, (match, capture) => {
-          return entities.decodeHTML(capture);
-        });
-        content = formatter.singleTag(content);
-
-        content = content.replace(/>\s[\w]|[\w]\s</g, (match)=>{
-          return match.replace(/\s/g, '');
-        });
-        content = content.replace(/<textarea[^>]*>((.|\n)*?)<\/textarea>/g, (match, capture) => {
-          return match.replace(capture, (match) => {
-            return match.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\//g, '&#47;');
-          });
-        });
-
+        content = formatter.render(content);
         file.contents = new Buffer(content);
         self.push(file);
         next();
