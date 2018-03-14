@@ -3,8 +3,6 @@ const path = require('path');
 const through = require('through2');
 const _ = require('lodash');
 const nunjucks = require('nunjucks');
-const cheerio = require('cheerio');
-const entities = require('entities');
 const async = require('async');
 const guid = require('guid');
 const nut = require(__dirname + '/nut.js');
@@ -67,7 +65,6 @@ const compile = (content, data, option, callback) => {
       .replace(/\}/g, '&#125;')
       .replace(/\s/g, '&nbsp;'));
   });
-
 
   const NutExtension = function () {
     this.tags = ['nut'];
@@ -185,7 +182,7 @@ const render = (html, data, option, callback) => {
       }
 
       let config = {
-        file: {path: data.filepath.replace(path.resolve('./'), '')},
+        file: { path: data.filepath.replace(path.resolve('./'), '') },
         props: props,
         attribs: attribs,
       };
@@ -199,20 +196,22 @@ const render = (html, data, option, callback) => {
     html = html.replace(new RegExp(`<\/${key}[^>]*>`, 'g'), '{% endnut %}');
   }
 
-  compile(html, data, option, function (rendered) {
-    if (check) {
+  if (check) {
+    compile(html, data, option, function (rendered) {
       render(new nunjucks.runtime.SafeString(rendered), data, option, callback);
-    } else {
-      callback(new nunjucks.runtime.SafeString(rendered));
-    }
-  });
+    })
+  } else {
+    callback(new nunjucks.runtime.SafeString(html));
+  }
+
 }
 const build = (option) => {
   'use strict';
 
   return through.obj(function (file, enc, next) {
     'use strict';
-    console.info('Compile : ' + file.path.replace(path.resolve('./'), ''));
+
+    var start = +new Date();
 
     const self = this;
     let content = '';
@@ -238,12 +237,14 @@ const build = (option) => {
     try {
       async.series([
         (callback) => {
-          render(content, data, option, function (rendered) {
-            content = rendered;
-            callback(null);
+          compile(content, data, option, function (rendered) {
+            render(new nunjucks.runtime.SafeString(rendered), data, option, (compiled) => {
+              content = compiled;
+              callback(null);
+            });
           });
         }
-      ], (err, result) => {
+      ], (err) => {
         if (err) {
           console.error(err);
           content = err.toString();
@@ -252,6 +253,7 @@ const build = (option) => {
         content = formatter.render(content);
         file.contents = new Buffer(content);
         self.push(file);
+        console.info('\x1b[0mCompile \'\x1b[32m' + file.path.replace(path.resolve('./'), '')+'\x1b[0m\' after \x1b[35m'+(+(+new Date()) - start)+'\x1b[0m ms');
         next();
       });
     } catch (err) {
