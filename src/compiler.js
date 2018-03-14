@@ -54,7 +54,7 @@ const compile = (content, data, option, callback) => {
   environment.addGlobal('boolean', function (data) {
     return (data || "false") === "true";
   });
-  environment.addFilter('entity', function(val){
+  environment.addFilter('entity', function (val) {
     return new nunjucks.runtime.SafeString(val
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
@@ -62,9 +62,11 @@ const compile = (content, data, option, callback) => {
       .replace(/"/g, '&#34;')
       .replace(/'/g, '&#39;')
       .replace(/\n/g, '&#13;')
+      .replace(/%/g, '&#37;')
+      .replace(/\{/g, '&#123;')
+      .replace(/\}/g, '&#125;')
       .replace(/\s/g, '&nbsp;'));
   });
-
 
 
   const NutExtension = function () {
@@ -81,6 +83,7 @@ const compile = (content, data, option, callback) => {
     };
 
     this.run = function (context, args, body) {
+
       let id = guid.create().value.replace(/\-/g, '');
       let content = body();
       args.props = args.props || {};
@@ -147,11 +150,9 @@ const compile = (content, data, option, callback) => {
     };
 
     this.run = function (context, args, body) {
-
       return new nunjucks.runtime.SafeString(args && args.value ? args.value : body());
     };
   };
-
   environment.addExtension('SlotExtension', new SlotExtension());
 
   environment.renderString(content, data, function (err, result) {
@@ -161,7 +162,51 @@ const compile = (content, data, option, callback) => {
     callback(err ? err.toString() : result);
   });
 };
+const render = (html, data, option, callback) => {
+  html = formatter.closing(html);
+  let check = false;
+  for (let key in nut.get()) {
+    html = html.replace(new RegExp(`<${key}[^>]*>`, 'g'), (match, capture) => {
+      check = true;
+      let item = nut.get(key);
+      let props = JSON.parse(JSON.stringify(item.props));
 
+      let reg = /(\S+)=[\'"]?((?:(?!\/>|>|"|\').)+)/g;
+      let attribs = {};
+      let attr;
+      while ((attr = reg.exec(match)) !== null) {
+        attribs[attr[1]] = attr[2];
+      }
+      for (let prop in props) {
+        if (attribs[prop]) {
+          props[prop] = attribs[prop];
+          delete attribs[prop];
+        }
+      }
+
+      let config = {
+        file: {path: data.filepath.replace(path.resolve('./'), '')},
+        props: props,
+        attribs: attribs,
+      };
+
+      config.nut = key;
+      config.template = item.template;
+      let block = `{% nut ${JSON.stringify(config)} %}`;
+      return block;
+    });
+
+    html = html.replace(new RegExp(`<\/${key}[^>]*>`, 'g'), '{% endnut %}');
+  }
+
+  compile(html, data, option, function (rendered) {
+    if (check) {
+      render(new nunjucks.runtime.SafeString(rendered), data, option, callback);
+    } else {
+      callback(new nunjucks.runtime.SafeString(rendered));
+    }
+  });
+}
 const build = (option) => {
   'use strict';
 
@@ -175,9 +220,7 @@ const build = (option) => {
       content = file.contents.toString();
     }
 
-    //content = formatter.singleTag( formatter.xhtml(content) );
     let data = _.cloneDeep(option.data) || {};
-
     if (file.isNull()) {
       this.push(file);
       return next();
@@ -195,51 +238,11 @@ const build = (option) => {
     try {
       async.series([
         (callback) => {
-          compile(content, data, option, function (rendered) {
-            content = rendered;
-
-            callback(null);
-          });
-        },
-        (callback) => {
-          content = formatter.closing(content);
-          for (let key in nut.get()) {
-            content = content.replace(new RegExp(`<${key}[^>]*>`, 'g'), (match, capture) => {
-              let item = nut.get(key);
-              let props = JSON.parse(JSON.stringify(item.props));
-
-              let reg = /(\S+)=[\'"]?((?:(?!\/>|>|"|\').)+)/g;
-              let attribs = {};
-              let attr;
-              while ((attr = reg.exec(match)) !== null) {
-                attribs[attr[1]] = attr[2];
-              }
-              for (let prop in props) {
-                if (attribs[prop]) {
-                  props[prop] = attribs[prop];
-                  delete attribs[prop];
-                }
-              }
-
-              let config = {
-                file: {path: file.path.replace(path.resolve('./'), '')},
-                props: props,
-                attribs: attribs,
-              };
-
-              config.nut = key;
-              config.template = item.template;
-              let block = `{% nut ${JSON.stringify(config)} %}`;
-              return block;
-            });
-
-            content = content.replace(new RegExp(`<[\/]?${key}[^>]*>`, 'g'), '{% endnut %}');
-          }
-          compile(content, data, option, function (rendered) {
+          render(content, data, option, function (rendered) {
             content = rendered;
             callback(null);
           });
-        },
+        }
       ], (err, result) => {
         if (err) {
           console.error(err);
