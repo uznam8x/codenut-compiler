@@ -4,9 +4,10 @@ const through = require('through2');
 const _ = require('lodash');
 const nunjucks = require('nunjucks');
 const async = require('async');
-const guid = require('guid');
+const uuid = require('uuid/v4');
 const nut = require(__dirname + '/nut.js');
 const formatter = require('html-formatter');
+const fs = require('fs');
 const defaults = {
   path: '.',
   ext: '.html',
@@ -18,13 +19,204 @@ const defaults = {
   manageEnv: null
 };
 
+const Loader = nunjucks.Loader.extend({
+  init: function (searchPaths, opts) {
+    if (typeof opts === 'boolean') {
+      console.log(
+        '[nunjucks] Warning: you passed a boolean as the second ' +
+        'argument to FileSystemLoader, but it now takes an options ' +
+        'object. See http://mozilla.github.io/nunjucks/api.html#filesystemloader'
+      );
+    }
+
+    opts = opts || {};
+    this.pathsToNames = {};
+    this.noCache = !!opts.noCache;
+
+    if (searchPaths) {
+      searchPaths = ( Object.prototype.toString.call(searchPaths) === '[object Array]' ) ? searchPaths : [searchPaths];
+      // For windows, convert to forward slashes
+      this.searchPaths = searchPaths.map(path.normalize);
+    }
+    else {
+      this.searchPaths = ['.'];
+    }
+
+    if (opts.watch) {
+      // Watch all the templates in the paths and fire an event when
+      // they change
+      var chokidar = require('chokidar');
+      var paths = this.searchPaths.filter(fs.existsSync);
+      var watcher = chokidar.watch(paths);
+      var _this = this;
+      watcher.on('all', function (event, fullname) {
+        fullname = path.resolve(fullname);
+        if (event === 'change' && fullname in _this.pathsToNames) {
+          _this.emit('update', _this.pathsToNames[fullname]);
+        }
+      });
+      watcher.on('error', function (error) {
+        console.log('Watcher error: ' + error);
+      });
+    }
+  },
+
+  getSource: function (name) {
+    var fullpath = null;
+    var paths = this.searchPaths;
+
+    for (var i = 0; i < paths.length; i++) {
+      var basePath = path.resolve(paths[i]);
+      var p = path.resolve(paths[i], name);
+
+      // Only allow the current directory and anything
+      // underneath it to be searched
+      if (p.indexOf(basePath) === 0 && fs.existsSync(p)) {
+        fullpath = p;
+        break;
+      }
+    }
+
+    if (!fullpath) {
+      return null;
+    }
+
+    this.pathsToNames[fullpath] = name;
+
+    let content = fs.readFileSync(fullpath, 'utf-8');
+    content = formatter.closing(content);
+    for (let key in adapter) {
+      content = adapter[key](content);
+    }
+
+    const result = {
+      src: content,
+      path: fullpath,
+      noCache: this.noCache
+    };
+
+    return result;
+  }
+});
+
+const adapter = {
+  layout: (html) => {
+    html = html.replace(/<layout[^>]*src=['"](\S+)['"][^>]*>/g, (match, capture) => {
+      return '{% extends "' + capture + '" %}';
+    });
+    html = html.replace(/<\/layout>/g, '');
+    return html;
+  },
+  block: (html) => {
+    html = html.replace(/<block[^>]*name=['"](\S+)['"][^>]*>/g, (match, capture) => {
+      return '{% block ' + capture + ' %}';
+    });
+    html = html.replace(/<\/block>/g, '{% endblock %}');
+    return html;
+  },
+  include: (html) => {
+    html = html.replace(/<include[^>]*src=['"](\S+)['"][^>]*>/g, (match, capture) => {
+      return '{% include "' + capture + '" %}';
+    });
+    html = html.replace(/<\/include>/g, '');
+    return html;
+  },
+  'super': (html) => {
+    html = html.replace(/<super[^>]*>/g, '{{ super() }}');
+    html = html.replace(/<\/super>/g, '');
+    return html;
+  }
+}
+
+const NutExtension = function () {
+  this.tags = ['nut'];
+
+  this.parse = function (parser, nodes, lexer) {
+    let tok = parser.nextToken();
+    let args = parser.parseSignature(null, true);
+    parser.advanceAfterBlockEnd(tok.value);
+
+    let body = parser.parseUntilBlocks('endnut');
+    parser.advanceAfterBlockEnd();
+    return new nodes.CallExtension(this, 'run', args, [body]);
+  };
+
+  this.run = function (context, args, body) {
+
+    let id = uuid().replace(/\-/g, '');
+    let content = body();
+    args.props = args.props || {};
+    args.props.slot = {
+      default: {
+        value: body().replace(/\t|\n/g, '')
+          .replace(/>\s+</g, '><')
+          .replace(/\s+</g, '<')
+          .replace(/<slot[^>]*>(.|\n)*?<\/slot>/g, '')
+      }
+    };
+
+    let slots = content.match(/<slot[^>]*>(.|\n)*?<\/slot>/g);
+    if (slots) {
+      _.each(slots, (node) => {
+        let el = node.match(/<slot[^>]*>/g)[0];
+
+        let reg = /(\S+)=[\'"]?((?:(?!\/>|>|"|\'|\s).)+)/g;
+        let attribs = {};
+        let attr;
+
+        while ((attr = reg.exec(el)) !== null) {
+          attribs[attr[1]] = attr[2];
+        }
+        let name = attribs['name'];
+        delete attribs['name'];
+
+        args.props.slot[name] = {
+          attribs: attribs,
+          value: node.replace(/<slot[^>]*>|<\/slot>/g, '')
+        }
+      })
+    }
+
+    let item = nut.get(args.nut);
+
+    if (item.beforeCreate) {
+      args = item.beforeCreate(args);
+    }
+    let output = new nunjucks.runtime.SafeString(
+      `{% import '${args.template}' as ${id} %}
+                 {{ ${id}.create(json('${JSON.stringify(args.props, null)}'), json('${JSON.stringify(args.attribs, null)}')) }}
+            `);
+
+    if (item.created) {
+      output.val = item.created(output.val);
+    }
+    return output;
+  };
+};
+
+const SlotExtension = function () {
+  this.tags = ['slot'];
+
+  this.parse = function (parser, nodes, lexer) {
+
+    let tok = parser.nextToken();
+    let args = parser.parseSignature(null, true);
+    parser.advanceAfterBlockEnd(tok.value);
+    let body = parser.parseUntilBlocks('endslot');
+    parser.advanceAfterBlockEnd();
+    return new nodes.CallExtension(this, 'run', args, [body]);
+  };
+
+  this.run = function (context, args, body) {
+    return new nunjucks.runtime.SafeString(args && args.value ? args.value : body());
+  };
+};
+
 const compile = (content, data, option, callback) => {
   option = _.defaultsDeep(option || {}, defaults);
   nunjucks.configure(option.envOptions);
 
-  if (!option.loaders) {
-    option.loaders = new nunjucks.FileSystemLoader(option.path);
-  }
+  option.loaders = new Loader(option.path);
 
   const environment = new nunjucks.Environment(option.loaders, option.envOptions);
   if (_.isFunction(option.manageEnv)) {
@@ -65,91 +257,7 @@ const compile = (content, data, option, callback) => {
       .replace(/\}/g, '&#125;')
       .replace(/\s/g, '&nbsp;'));
   });
-
-  const NutExtension = function () {
-    this.tags = ['nut'];
-
-    this.parse = function (parser, nodes, lexer) {
-      let tok = parser.nextToken();
-      let args = parser.parseSignature(null, true);
-      parser.advanceAfterBlockEnd(tok.value);
-
-      let body = parser.parseUntilBlocks('endnut');
-      parser.advanceAfterBlockEnd();
-      return new nodes.CallExtension(this, 'run', args, [body]);
-    };
-
-    this.run = function (context, args, body) {
-
-      let id = guid.create().value.replace(/\-/g, '');
-      let content = body();
-      args.props = args.props || {};
-      args.props.slot = {
-        default: {
-          value: body().replace(/\t|\n/g, '')
-            .replace(/>\s+</g, '><')
-            .replace(/\s+</g, '<')
-            .replace(/<slot[^>]*>(.|\n)*?<\/slot>/g, '')
-        }
-      };
-
-      let slots = content.match(/<slot[^>]*>(.|\n)*?<\/slot>/g);
-      if (slots) {
-        _.each(slots, (node) => {
-          let el = node.match(/<slot[^>]*>/g)[0];
-
-          let reg = /(\S+)=[\'"]?((?:(?!\/>|>|"|\'|\s).)+)/g;
-          let attribs = {};
-          let attr;
-
-          while ((attr = reg.exec(el)) !== null) {
-            attribs[attr[1]] = attr[2];
-          }
-          let name = attribs['name'];
-          delete attribs['name'];
-
-          args.props.slot[name] = {
-            attribs: attribs,
-            value: node.replace(/<slot[^>]*>|<\/slot>/g, '')
-          }
-        })
-      }
-
-      let item = nut.get(args.nut);
-
-      if (item.beforeCreate) {
-        args = item.beforeCreate(args);
-      }
-      let output = new nunjucks.runtime.SafeString(environment.renderString(
-        `{% import '${args.template}' as ${id} %}
-                 {{ ${id}.create(json('${JSON.stringify(args.props, null)}'), json('${JSON.stringify(args.attribs, null)}')) }}
-            `));
-
-      if (item.created) {
-        output.val = item.created(output.val);
-      }
-      return output;
-    };
-  };
   environment.addExtension('NutExtension', new NutExtension());
-
-  const SlotExtension = function () {
-    this.tags = ['slot'];
-
-    this.parse = function (parser, nodes, lexer) {
-
-      let tok = parser.nextToken();
-      let args = parser.parseSignature(null, true);
-      parser.advanceAfterBlockEnd(tok.value);
-      let body = parser.parseUntilBlocks('endslot');
-      parser.advanceAfterBlockEnd();
-      return new nodes.CallExtension(this, 'run', args, [body]);
-    };
-
-    this.run = function (context, args, body) {
-      return new nunjucks.runtime.SafeString(args && args.value ? args.value : body());
-    };
-  };
   environment.addExtension('SlotExtension', new SlotExtension());
 
   environment.renderString(content, data, function (err, result) {
@@ -159,12 +267,22 @@ const compile = (content, data, option, callback) => {
     callback(err ? err.toString() : result);
   });
 };
+
+const byteLength = (str) => {
+  return str.replace(/[\0-\x7f]|([0-\u07ff]|(.))/g, "$&$1$2").length;
+};
+
 const render = (html, data, option, callback) => {
   html = formatter.closing(html);
-  let check = false;
+  let len = byteLength(html);
+
+  for (let key in adapter) {
+    html = adapter[key](html);
+  }
+
+  // nut
   for (let key in nut.get()) {
     html = html.replace(new RegExp(`<${key}[^>]*>`, 'g'), (match, capture) => {
-      check = true;
       let item = nut.get(key);
       let props = JSON.parse(JSON.stringify(item.props));
 
@@ -196,15 +314,15 @@ const render = (html, data, option, callback) => {
     html = html.replace(new RegExp(`<\/${key}[^>]*>`, 'g'), '{% endnut %}');
   }
 
-  if (check) {
-    compile(html, data, option, function (rendered) {
+  compile(html, data, option, function (rendered) {
+    if (len === byteLength(rendered)) {
+      callback(new nunjucks.runtime.SafeString(rendered));
+    } else {
       render(new nunjucks.runtime.SafeString(rendered), data, option, callback);
-    })
-  } else {
-    callback(new nunjucks.runtime.SafeString(html));
-  }
+    }
+  })
+};
 
-}
 const build = (option) => {
   'use strict';
 
@@ -253,7 +371,7 @@ const build = (option) => {
         content = formatter.render(content);
         file.contents = new Buffer(content);
         self.push(file);
-        console.info('\x1b[0mCompile \'\x1b[32m' + file.path.replace(path.resolve('./'), '')+'\x1b[0m\' after \x1b[35m'+(+(+new Date()) - start)+'\x1b[0m ms');
+        console.info('\x1b[0mCompile \'\x1b[32m' + file.path.replace(path.resolve('./'), '') + '\x1b[0m\' after \x1b[35m' + (+(+new Date()) - start) + '\x1b[0m ms');
         next();
       });
     } catch (err) {

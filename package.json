@@ -1,7 +1,7 @@
 {
   "name": "codenut-compiler",
   "version": "2.1.2",
-  "description": "Codenut-compiler is nunjucks and vue-ssr html compiler",
+  "description": "Codenut-compiler is nunjucks  html compiler",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -10,24 +10,21 @@
     "type": "git",
     "url": "git+https://github.com/uznam8x/codenut-compiler.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "MIT",
+  "keywords": ["codenut", "prisf","uznam8x","compiler","nunjcuks","nut","html framework"],
+  "author": "uznam8x",
+  "license": "GPLv2",
   "bugs": {
     "url": "https://github.com/uznam8x/codenut-compiler/issues"
   },
   "homepage": "https://github.com/uznam8x/codenut-compiler#readme",
   "dependencies": {
     "async": "^2.6.0",
-    "cheerio": "^1.0.0-rc.2",
-    "child_process": "^1.0.2",
-    "entities": "^1.1.1",
-    "guid": "0.0.12",
     "gulp": "^3.9.1",
     "html-formatter": "latest",
     "lodash": "^4.17.4",
     "nunjucks": "^3.0.1",
     "path": "^0.12.7",
+    "uuid": "^3.2.1",
     "through2": "^2.0.3"
   }
 }
