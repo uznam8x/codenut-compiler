@@ -1,6 +1,6 @@
 {
   "name": "codenut-compiler",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "description": "Codenut-compiler is nunjucks  html compiler",
   "main": "index.js",
   "scripts": {

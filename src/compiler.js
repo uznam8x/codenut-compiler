@@ -19,6 +19,12 @@ const defaults = {
   manageEnv: null
 };
 
+const stringify = (data)=>{
+  let buffer = Buffer.from(JSON.stringify(data)).toString('base64');
+  buffer = buffer.replace(/=/g, 'XX4XX');
+  return buffer;
+}
+
 const Loader = nunjucks.Loader.extend({
   init: function (searchPaths, opts) {
     if (typeof opts === 'boolean') {
@@ -132,6 +138,7 @@ const NutExtension = function () {
   this.tags = ['nut'];
 
   this.parse = function (parser, nodes, lexer) {
+
     let tok = parser.nextToken();
     let args = parser.parseSignature(null, true);
     parser.advanceAfterBlockEnd(tok.value);
@@ -142,9 +149,11 @@ const NutExtension = function () {
   };
 
   this.run = function (context, args, body) {
+    let id = 'i'+uuid().replace(/\-/g, '');
+    args = JSON.parse( Buffer.from(args.replace(/XX4XX/g, '='), 'base64').toString('ascii') );
 
-    let id = uuid().replace(/\-/g, '');
     let content = body();
+
     args.props = args.props || {};
     args.props.slot = {
       default: {
@@ -182,14 +191,9 @@ const NutExtension = function () {
     if (item.beforeCreate) {
       args = item.beforeCreate(args);
     }
-    let output = new nunjucks.runtime.SafeString(
-      `{% import '${args.template}' as ${id} %}
-                 {{ ${id}.create(json('${JSON.stringify(args.props, null)}'), json('${JSON.stringify(args.attribs, null)}')) }}
+    let output = new nunjucks.runtime.SafeString(`{% import '${args.template}' as ${id} %}
+                 {{ ${id}.create(json('${stringify(args.props)}'), json('${stringify(args.attribs)}')) }}
             `);
-
-    if (item.created) {
-      output.val = item.created(output.val);
-    }
     return output;
   };
 };
@@ -213,6 +217,7 @@ const SlotExtension = function () {
 };
 
 const compile = (content, data, option, callback) => {
+
   option = _.defaultsDeep(option || {}, defaults);
   nunjucks.configure(option.envOptions);
 
@@ -223,15 +228,16 @@ const compile = (content, data, option, callback) => {
     option.manageEnv.call(null, compile);
   }
 
-  environment.addGlobal('arrtibs', function (arrtibs) {
+  environment.addGlobal('attribs', function (attrs) {
     let str = '';
-    for (let key in arrtibs) {
-      str += `${key}="${arrtibs[key]}" `;
+    for (let key in attrs) {
+      str += `${key}="${attrs[key]}" `;
     }
     return new nunjucks.runtime.SafeString(str);
   });
 
   environment.addGlobal('json', function (data) {
+    data = Buffer.from(data.replace(/XX4XX/g, '='), 'base64').toString('ascii');
     data = data
       .replace(/=(["\'])([^>]*?)(["\'])/g, '=\\$1$2\\$3')
       .replace(/\\\\/g, '\\');
@@ -259,10 +265,11 @@ const compile = (content, data, option, callback) => {
   });
   environment.addExtension('NutExtension', new NutExtension());
   environment.addExtension('SlotExtension', new SlotExtension());
-
   environment.renderString(content, data, function (err, result) {
     if (err) {
+      throw err;
       console.error(err);
+      return;
     }
     callback(err ? err.toString() : result);
   });
@@ -307,7 +314,8 @@ const render = (html, data, option, callback) => {
 
       config.nut = key;
       config.template = item.template;
-      let block = `{% nut ${JSON.stringify(config)} %}`;
+      let block = `{% nut "${stringify(config)}" %}`;
+
       return block;
     });
 
@@ -315,6 +323,7 @@ const render = (html, data, option, callback) => {
   }
 
   compile(html, data, option, function (rendered) {
+
     if (len === byteLength(rendered)) {
       callback(new nunjucks.runtime.SafeString(rendered));
     } else {
@@ -358,6 +367,7 @@ const build = (option) => {
           compile(content, data, option, function (rendered) {
             render(new nunjucks.runtime.SafeString(rendered), data, option, (compiled) => {
               content = compiled;
+
               callback(null);
             });
           });
@@ -367,7 +377,6 @@ const build = (option) => {
           console.error(err);
           content = err.toString();
         }
-
         content = formatter.render(content);
         file.contents = new Buffer(content);
         self.push(file);
