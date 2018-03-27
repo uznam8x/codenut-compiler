@@ -19,7 +19,7 @@ const defaults = {
   manageEnv: null
 };
 
-const stringify = (data)=>{
+const encodeBase64 = (data) => {
   let buffer = Buffer.from(JSON.stringify(data)).toString('base64');
   buffer = buffer.replace(/=/g, 'XX4XX');
   return buffer;
@@ -149,8 +149,8 @@ const NutExtension = function () {
   };
 
   this.run = function (context, args, body) {
-    let id = 'i'+uuid().replace(/\-/g, '');
-    args = JSON.parse( Buffer.from(args.replace(/XX4XX/g, '='), 'base64').toString('ascii') );
+    let id = 'i' + uuid().replace(/\-/g, '');
+    args = JSON.parse(Buffer.from(args.replace(/XX4XX/g, '='), 'base64').toString('ascii'));
 
     let content = body();
 
@@ -192,7 +192,7 @@ const NutExtension = function () {
       args = item.beforeCreate(args);
     }
     let output = new nunjucks.runtime.SafeString(`{% import '${args.template}' as ${id} %}
-                 {{ ${id}.create(json('${stringify(args.props)}'), json('${stringify(args.attribs)}')) }}
+                 {{ ${id}.create(json(decodeBase64('${encodeBase64(args.props)}')), json(decodeBase64('${encodeBase64(args.attribs)}'))) }}
             `);
     return output;
   };
@@ -202,7 +202,6 @@ const SlotExtension = function () {
   this.tags = ['slot'];
 
   this.parse = function (parser, nodes, lexer) {
-
     let tok = parser.nextToken();
     let args = parser.parseSignature(null, true);
     parser.advanceAfterBlockEnd(tok.value);
@@ -217,7 +216,6 @@ const SlotExtension = function () {
 };
 
 const compile = (content, data, option, callback) => {
-
   option = _.defaultsDeep(option || {}, defaults);
   nunjucks.configure(option.envOptions);
 
@@ -235,9 +233,10 @@ const compile = (content, data, option, callback) => {
     }
     return new nunjucks.runtime.SafeString(str);
   });
-
+  environment.addGlobal('decodeBase64', function (data) {
+    return Buffer.from(data.replace(/XX4XX/g, '='), 'base64').toString('ascii');
+  });
   environment.addGlobal('json', function (data) {
-    data = Buffer.from(data.replace(/XX4XX/g, '='), 'base64').toString('ascii');
     data = data
       .replace(/=(["\'])([^>]*?)(["\'])/g, '=\\$1$2\\$3')
       .replace(/\\\\/g, '\\');
@@ -265,6 +264,8 @@ const compile = (content, data, option, callback) => {
   });
   environment.addExtension('NutExtension', new NutExtension());
   environment.addExtension('SlotExtension', new SlotExtension());
+  content = content.replace(/<script/g, '{% raw %}<script');
+  content = content.replace(/<\/script>/g, '</script>{% endraw %}');
   environment.renderString(content, data, function (err, result) {
     if (err) {
       throw err;
@@ -307,14 +308,14 @@ const render = (html, data, option, callback) => {
       }
 
       let config = {
-        file: { path: data.filepath.replace(path.resolve('./'), '') },
+        file: {path: data.filepath.replace(path.resolve('./'), '')},
         props: props,
         attribs: attribs,
       };
 
       config.nut = key;
       config.template = item.template;
-      let block = `{% nut "${stringify(config)}" %}`;
+      let block = `{% nut "${encodeBase64(config)}" %}`;
 
       return block;
     });
