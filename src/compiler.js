@@ -233,6 +233,14 @@ const compile = (content, data, option, callback) => {
     }
     return new nunjucks.runtime.SafeString(str);
   });
+
+  environment.addGlobal('removeAttr', function (attrs, key) {
+    if (attrs.hasOwnProperty(key)) {
+      delete attrs[key];
+    }
+    return attrs;
+  });
+
   environment.addGlobal('decodeBase64', function (data) {
     return Buffer.from(data.replace(/XX4XX/g, '='), 'base64').toString('ascii');
   });
@@ -268,9 +276,7 @@ const compile = (content, data, option, callback) => {
   content = content.replace(/<\/script>/g, '</script>{% endraw %}');
   environment.renderString(content, data, function (err, result) {
     if (err) {
-      throw err;
       console.error(err);
-      return;
     }
     callback(err ? err.toString() : result);
   });
